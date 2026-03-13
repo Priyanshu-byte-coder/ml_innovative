@@ -1,0 +1,18 @@
+{
+  "test_accuracy": 0.8181,
+  "test_f1": 0.5949,
+  "test_fake_f1": 0.2941,
+  "test_auc": 0.7042,
+  "test_pr_auc": 0.2541,
+  "best_val_f1": 0.6117,
+  "confusion_matrix": [
+    [
+      7802,
+      916
+    ],
+    [
+      903,
+      379
+    ]
+  ]
+}

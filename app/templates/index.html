@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fraud Review Detector &mdash; GNN</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    body{font-family:'Inter',system-ui,sans-serif;background:#0f172a;color:#e2e8f0}
+    #graph-container{width:100%;height:420px;border:1px solid #334155;border-radius:.75rem;background:#1e293b}
+    .card{background:#1e293b;border:1px solid #334155;border-radius:.75rem;padding:1.5rem}
+    .btn-primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);transition:all .2s}
+    .btn-primary:hover{filter:brightness(1.15);transform:translateY(-1px)}
+    .badge-fake{background:#ef4444;color:#fff;padding:.25rem .75rem;border-radius:9999px;font-weight:700}
+    .badge-real{background:#22c55e;color:#fff;padding:.25rem .75rem;border-radius:9999px;font-weight:700}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;height:20px;width:20px;border-radius:50%;background:#8b5cf6;cursor:pointer}
+    input[type=range]{-webkit-appearance:none;height:6px;border-radius:3px;background:#475569;outline:none}
+    textarea:focus,input:focus{outline:none;box-shadow:0 0 0 2px #6366f1}
+    .spinner{border:3px solid #334155;border-top:3px solid #8b5cf6;border-radius:50%;width:24px;height:24px;animation:spin .7s linear infinite;display:inline-block}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .fade-in{animation:fadeIn .4s ease-out}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- Header -->
+<header class="border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+      Fraud Review Detector
+    </h1>
+    <p class="text-sm text-slate-400 mt-1">Heterogeneous GNN (RGCN) &middot; User-Review-Product Graph</p>
+  </div>
+  <div class="flex gap-4 text-xs text-slate-400">
+    {% if metrics %}
+    <div class="card !p-2 !px-3">AUC <span class="text-indigo-300 font-bold">{{ "%.1f"|format(metrics.get('test_auc',0)*100) }}%</span></div>
+    <div class="card !p-2 !px-3">PR-AUC <span class="text-indigo-300 font-bold">{{ "%.1f"|format(metrics.get('test_pr_auc',0)*100) }}%</span></div>
+    <div class="card !p-2 !px-3">Fake-F1 <span class="text-indigo-300 font-bold">{{ "%.1f"|format(metrics.get('test_fake_f1',0)*100) }}%</span></div>
+    <div class="card !p-2 !px-3">Macro-F1 <span class="text-indigo-300 font-bold">{{ "%.1f"|format(metrics.get('test_f1',0)*100) }}%</span></div>
+    {% endif %}
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+  <!-- LEFT: Input -->
+  <section>
+    <div class="card">
+      <h2 class="text-lg font-semibold mb-4 text-slate-200">Submit a Review</h2>
+      <form id="review-form" class="space-y-4">
+        <div>
+          <label class="block text-sm text-slate-400 mb-1">Review Text</label>
+          <textarea name="review_text" rows="5" required
+            class="w-full bg-slate-800 border border-slate-600 rounded-lg p-3 text-sm text-slate-200 resize-none"
+            placeholder="Paste or type a review here..."></textarea>
+        </div>
+        <div class="grid grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm text-slate-400 mb-1">Rating: <span id="rating-val" class="text-indigo-300 font-bold">3</span></label>
+            <input type="range" name="rating" min="1" max="5" step="1" value="3"
+              class="w-full" oninput="document.getElementById('rating-val').textContent=this.value" />
+          </div>
+          <div>
+            <label class="block text-sm text-slate-400 mb-1">User ID <span class="text-slate-600">(opt)</span></label>
+            <input type="text" name="user_id"
+              class="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm text-slate-200" placeholder="e.g. 5044"/>
+          </div>
+          <div>
+            <label class="block text-sm text-slate-400 mb-1">Product ID <span class="text-slate-600">(opt)</span></label>
+            <input type="text" name="product_id"
+              class="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm text-slate-200" placeholder="e.g. 12"/>
+          </div>
+        </div>
+        <button type="submit"
+          class="btn-primary w-full py-3 rounded-lg text-white font-semibold text-sm flex items-center justify-center gap-2">
+          <span id="btn-label">Analyze Review</span>
+          <span id="btn-spinner" class="spinner hidden"></span>
+        </button>
+      </form>
+    </div>
+
+    <!-- Result card (hidden initially) -->
+    <div id="result-card" class="card mt-6 hidden fade-in">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-slate-200">Prediction</h2>
+        <span id="result-badge"></span>
+      </div>
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div class="text-center">
+          <p class="text-3xl font-bold" id="fake-pct">--</p>
+          <p class="text-xs text-red-400 mt-1">Fake probability</p>
+        </div>
+        <div class="text-center">
+          <p class="text-3xl font-bold" id="real-pct">--</p>
+          <p class="text-xs text-green-400 mt-1">Real probability</p>
+        </div>
+      </div>
+      <canvas id="prob-chart" height="100"></canvas>
+    </div>
+  </section>
+
+  <!-- RIGHT: Graph Visualization -->
+  <section>
+    <div class="card">
+      <h2 class="text-lg font-semibold mb-2 text-slate-200">Interaction Graph</h2>
+      <p class="text-xs text-slate-500 mb-3">The submitted review (purple) and its neighbours in the user-product graph. <span class="text-green-400">Green = Real</span>, <span class="text-red-400">Red = Fake</span>.</p>
+      <div id="graph-container"></div>
+    </div>
+
+    <div class="card mt-6">
+      <h2 class="text-lg font-semibold mb-2 text-slate-200">Neighbour Breakdown</h2>
+      <canvas id="neighbor-chart" height="140"></canvas>
+      <p id="neighbor-summary" class="text-xs text-slate-400 mt-3"></p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="text-center text-xs text-slate-600 py-6">Heterogeneous GNN Fraud Detection &middot; SBERT + HeteroConv + Focal Loss &middot; PyTorch Geometric + Flask</footer>
+
+<script>
+const form = document.getElementById('review-form');
+let probChart = null;
+let neighborChart = null;
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(form);
+
+  document.getElementById('btn-label').textContent = 'Analyzing...';
+  document.getElementById('btn-spinner').classList.remove('hidden');
+  document.getElementById('result-card').classList.add('hidden');
+
+  try {
+    const res = await fetch('/predict', {method:'POST', body:fd});
+    const d = await res.json();
+    if (d.error) { alert('Error: ' + d.error); return; }
+
+    // Badge
+    const badge = document.getElementById('result-badge');
+    badge.className = d.prediction === 'Fake' ? 'badge-fake' : 'badge-real';
+    badge.textContent = d.prediction + ' (' + d.confidence + '%)';
+
+    document.getElementById('fake-pct').textContent = d.fake_probability + '%';
+    document.getElementById('fake-pct').className = 'text-3xl font-bold ' + (d.fake_probability > 50 ? 'text-red-400' : 'text-slate-300');
+    document.getElementById('real-pct').textContent = d.real_probability + '%';
+    document.getElementById('real-pct').className = 'text-3xl font-bold ' + (d.real_probability > 50 ? 'text-green-400' : 'text-slate-300');
+
+    document.getElementById('result-card').classList.remove('hidden');
+
+    // Probability bar chart
+    renderProbChart(d.real_probability, d.fake_probability);
+
+    // Graph
+    renderGraph(d.neighbors, d.prediction);
+
+    // Neighbor chart
+    renderNeighborChart(d.neighbors);
+  } catch(err) {
+    alert('Request failed: ' + err);
+  } finally {
+    document.getElementById('btn-label').textContent = 'Analyze Review';
+    document.getElementById('btn-spinner').classList.add('hidden');
+  }
+});
+
+function renderProbChart(real, fake) {
+  const ctx = document.getElementById('prob-chart').getContext('2d');
+  if (probChart) probChart.destroy();
+  probChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Real', 'Fake'],
+      datasets: [{
+        data: [real, fake],
+        backgroundColor: ['#22c55e88', '#ef444488'],
+        borderColor: ['#22c55e', '#ef4444'],
+        borderWidth: 2,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: {legend:{display:false}},
+      scales: {
+        x: {max:100, ticks:{color:'#94a3b8'}, grid:{color:'#1e293b'}},
+        y: {ticks:{color:'#e2e8f0',font:{weight:'bold'}}, grid:{display:false}}
+      }
+    }
+  });
+}
+
+function renderGraph(neighbors, prediction) {
+  const nodes = [{
+    id: 'new',
+    label: 'Your\nReview',
+    color: {background:'#8b5cf6', border:'#a78bfa'},
+    font: {color:'#fff', size:14, bold:true},
+    size: 30,
+    shape: 'dot',
+  }];
+  const edges = [];
+
+  neighbors.forEach(n => {
+    const isFake = n.is_fake;
+    nodes.push({
+      id: n.id,
+      label: (isFake ? 'F' : 'R') + ' (' + n.rating + '★)',
+      color: {background: isFake ? '#ef444488' : '#22c55e88', border: isFake ? '#ef4444' : '#22c55e'},
+      font: {color:'#e2e8f0', size:10},
+      size: 14,
+      shape: 'dot',
+    });
+    edges.push({
+      from: 'new', to: n.id,
+      color: {color:'#47515966', highlight:'#8b5cf6'},
+      width: 1,
+    });
+  });
+
+  const container = document.getElementById('graph-container');
+  new vis.Network(container, {nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges)}, {
+    physics: {solver:'forceAtlas2Based', forceAtlas2Based:{gravitationalConstant:-40, springLength:120}},
+    interaction: {hover:true, zoomView:true},
+  });
+}
+
+function renderNeighborChart(neighbors) {
+  const fakeN = neighbors.filter(n => n.is_fake).length;
+  const realN = neighbors.length - fakeN;
+  const ctx = document.getElementById('neighbor-chart').getContext('2d');
+  if (neighborChart) neighborChart.destroy();
+  neighborChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Real neighbours', 'Fake neighbours'],
+      datasets: [{data:[realN, fakeN], backgroundColor:['#22c55e','#ef4444'], borderWidth:0}]
+    },
+    options: {
+      responsive:true,
+      plugins:{legend:{labels:{color:'#94a3b8'}}}
+    }
+  });
+  document.getElementById('neighbor-summary').textContent =
+    `${neighbors.length} graph neighbours shown: ${realN} real, ${fakeN} fake.`;
+}
+</script>
+</body>
+</html>
