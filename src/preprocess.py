@@ -14,7 +14,7 @@ class YelpGraphBuilder:
     """Build a heterogeneous User-Review-Product graph from Yelp data."""
 
     def __init__(self, data_dir, output_dir, max_samples=None,
-                 sbert_model='all-MiniLM-L6-v2', sim_threshold=0.9,
+                 sbert_model='all-MiniLM-L6-v2', sim_threshold=0.8,
                  sbert_batch=512):
         self.data_dir = data_dir
         self.output_dir = output_dir
@@ -86,32 +86,47 @@ class YelpGraphBuilder:
         df['time_since_last_user_review'] = (
             user_dates.diff().dt.total_seconds().fillna(0) / 86400.0)
 
-        def rolling_count(group, window):
+        def rolling_count_hours(group, hours):
+            """Count reviews within `hours` hours before each review."""
             out = np.zeros(len(group))
             dates = group.values
+            delta = np.timedelta64(hours, 'h')
             for i in range(len(dates)):
-                out[i] = np.sum((dates[i] - dates[:i]) <= np.timedelta64(window, 'D'))
+                out[i] = np.sum((dates[i] - dates[:i]) <= delta)
             return pd.Series(out, index=group.index)
 
-        df['reviews_in_last_24h_for_user'] = (
-            user_dates.apply(lambda g: rolling_count(g, 1))
+        # Burst detection: 1h, 6h, 24h windows for user
+        df['reviews_last_1h_user'] = (
+            user_dates.apply(lambda g: rolling_count_hours(g, 1))
+            .droplevel(0).reindex(df.index).fillna(0))
+        df['reviews_last_6h_user'] = (
+            user_dates.apply(lambda g: rolling_count_hours(g, 6))
+            .droplevel(0).reindex(df.index).fillna(0))
+        df['reviews_last_24h_user'] = (
+            user_dates.apply(lambda g: rolling_count_hours(g, 24))
             .droplevel(0).reindex(df.index).fillna(0))
         df['reviews_in_last_week_for_user'] = (
-            user_dates.apply(lambda g: rolling_count(g, 7))
+            user_dates.apply(lambda g: rolling_count_hours(g, 168))
             .droplevel(0).reindex(df.index).fillna(0))
 
-        # Per-product temporal
+        # Per-product temporal: 24h and 7-day windows
         prod_dates = df.groupby('pid')['date']
+        df['reviews_last_24h_product'] = (
+            prod_dates.apply(lambda g: rolling_count_hours(g, 24))
+            .droplevel(0).reindex(df.index).fillna(0))
         df['reviews_in_last_week_for_product'] = (
-            prod_dates.apply(lambda g: rolling_count(g, 7))
+            prod_dates.apply(lambda g: rolling_count_hours(g, 168))
             .droplevel(0).reindex(df.index).fillna(0))
 
         # Re-align to original index order
         df = df.sort_index()
         self.temporal_cols = [
-            'reviews_in_last_24h_for_user',
+            'reviews_last_1h_user',
+            'reviews_last_6h_user',
+            'reviews_last_24h_user',
             'reviews_in_last_week_for_user',
             'time_since_last_user_review',
+            'reviews_last_24h_product',
             'reviews_in_last_week_for_product',
         ]
         for c in self.temporal_cols:
@@ -386,8 +401,8 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description="Preprocess Yelp → HeteroData")
     p.add_argument('--data_dir',      default='Yelp-Dataset')
     p.add_argument('--output_dir',    default='processed')
-    p.add_argument('--max_samples',   type=int, default=50000)
-    p.add_argument('--sim_threshold', type=float, default=0.9)
+    p.add_argument('--max_samples',   type=int, default=200000)
+    p.add_argument('--sim_threshold', type=float, default=0.8)
     args = p.parse_args()
 
     YelpGraphBuilder(

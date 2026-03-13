@@ -19,19 +19,22 @@ def load_metrics():
 
 
 def create_performance_chart(metrics):
-    fig, ax = plt.subplots(figsize=(11, 6))
+    fig, ax = plt.subplots(figsize=(11, 7))
 
-    metric_names = ['Test Accuracy', 'Macro-F1', 'Fake-F1',
-                    'AUC-ROC', 'PR-AUC', 'Val Macro-F1']
+    thr = metrics.get('best_threshold', 0.5)
+    metric_names = ['Test Accuracy', 'Macro-F1', 'Fake-Precision',
+                    'Fake-Recall', 'Fake-F1', 'AUC-ROC', 'PR-AUC']
     values = [
         metrics['test_accuracy'] * 100,
         metrics['test_f1'] * 100,
+        metrics.get('test_fake_prec', 0) * 100,
+        metrics.get('test_fake_rec', 0) * 100,
         metrics['test_fake_f1'] * 100,
         metrics['test_auc'] * 100,
         metrics['test_pr_auc'] * 100,
-        metrics['best_val_f1'] * 100,
     ]
-    colors = ['#6366f1', '#8b5cf6', '#ef4444', '#ec4899', '#f59e0b', '#10b981']
+    colors = ['#6366f1', '#8b5cf6', '#f59e0b', '#f97316',
+              '#ef4444', '#ec4899', '#10b981']
 
     bars = ax.barh(metric_names, values, color=colors, alpha=0.85,
                    edgecolor='black', linewidth=1.5)
@@ -41,7 +44,7 @@ def create_performance_chart(metrics):
                 fontweight='bold', fontsize=11)
 
     ax.set_xlabel('Score (%)', fontsize=12, fontweight='bold')
-    ax.set_title('Heterogeneous GNN - Performance Metrics', fontsize=14,
+    ax.set_title(f'HeteroGNN Performance (threshold={thr})', fontsize=14,
                  fontweight='bold', pad=20)
     ax.set_xlim(0, 100)
     ax.grid(axis='x', alpha=0.3)
@@ -63,12 +66,12 @@ def create_confusion_matrix_viz(metrics):
                 yticklabels=['Actual Real', 'Actual Fake'],
                 cbar_kws={'label': 'Count'},
                 annot_kws={'fontsize': 14, 'fontweight': 'bold'})
-    ax1.set_title('Confusion Matrix (Test Set)', fontsize=13,
+    thr = metrics.get('best_threshold', 0.5)
+    ax1.set_title(f'Confusion Matrix (threshold={thr})', fontsize=13,
                   fontweight='bold', pad=15)
     ax1.set_ylabel('True Label', fontsize=11, fontweight='bold')
     ax1.set_xlabel('Predicted Label', fontsize=11, fontweight='bold')
 
-    # Derive per-class metrics from the confusion matrix
     tn, fp = cm[0]
     fn, tp = cm[1]
     prec_real = tn / (tn + fn + 1e-8)
@@ -108,6 +111,84 @@ def create_confusion_matrix_viz(metrics):
     plt.close()
 
 
+def create_pr_curve(metrics):
+    pr = metrics.get('pr_curve')
+    if not pr:
+        print("Skipping PR curve (data not in metrics)")
+        return
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(pr['recall'], pr['precision'], color='#6366f1', linewidth=2)
+    ax.fill_between(pr['recall'], pr['precision'], alpha=0.15,
+                    color='#6366f1')
+    ax.set_xlabel('Recall', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Precision', fontsize=12, fontweight='bold')
+    pr_auc = metrics.get('test_pr_auc', 0)
+    ax.set_title(f'Precision-Recall Curve (PR-AUC={pr_auc:.3f})',
+                 fontsize=14, fontweight='bold', pad=15)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('docs/pr_curve.png', dpi=300, bbox_inches='tight')
+    print("Saved: docs/pr_curve.png")
+    plt.close()
+
+
+def create_roc_curve(metrics):
+    roc = metrics.get('roc_curve')
+    if not roc:
+        print("Skipping ROC curve (data not in metrics)")
+        return
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(roc['fpr'], roc['tpr'], color='#ec4899', linewidth=2)
+    ax.plot([0, 1], [0, 1], 'k--', alpha=0.4)
+    ax.fill_between(roc['fpr'], roc['tpr'], alpha=0.15, color='#ec4899')
+    ax.set_xlabel('False Positive Rate', fontsize=12, fontweight='bold')
+    ax.set_ylabel('True Positive Rate', fontsize=12, fontweight='bold')
+    auc = metrics.get('test_auc', 0)
+    ax.set_title(f'ROC Curve (AUC={auc:.3f})', fontsize=14,
+                 fontweight='bold', pad=15)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('docs/roc_curve.png', dpi=300, bbox_inches='tight')
+    print("Saved: docs/roc_curve.png")
+    plt.close()
+
+
+def create_threshold_plot(metrics):
+    scan = metrics.get('threshold_scan')
+    if not scan:
+        print("Skipping threshold plot (data not in metrics)")
+        return
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ts = scan['thresholds']
+    ax.plot(ts, [v * 100 for v in scan['fake_recall']],
+            'o-', color='#f97316', linewidth=2, label='Fake Recall')
+    ax.plot(ts, [v * 100 for v in scan['fake_prec']],
+            's-', color='#6366f1', linewidth=2, label='Fake Precision')
+    ax.plot(ts, [v * 100 for v in scan['fake_f1']],
+            '^-', color='#ef4444', linewidth=2, label='Fake F1')
+
+    best_t = metrics.get('best_threshold', 0.35)
+    ax.axvline(x=best_t, color='#10b981', linestyle='--', linewidth=2,
+               label=f'Best threshold ({best_t})')
+
+    ax.set_xlabel('Decision Threshold', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Score (%)', fontsize=12, fontweight='bold')
+    ax.set_title('Fake Review Metrics vs Decision Threshold', fontsize=14,
+                 fontweight='bold', pad=15)
+    ax.legend(fontsize=10)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 100)
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('docs/threshold_analysis.png', dpi=300, bbox_inches='tight')
+    print("Saved: docs/threshold_analysis.png")
+    plt.close()
+
+
 def create_dataset_overview():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
@@ -120,11 +201,11 @@ def create_dataset_overview():
         wedgeprops={'edgecolor': 'black', 'linewidth': 1.5})
     for a in autotexts:
         a.set_color('white'); a.set_fontsize(12)
-    ax1.set_title('Dataset Split (50K Reviews)', fontsize=13,
+    ax1.set_title('Dataset Split', fontsize=13,
                   fontweight='bold', pad=20)
 
     labels = ['Real Reviews\n(86.8%)', 'Fake Reviews\n(13.2%)']
-    label_sizes = [43390, 6610]
+    label_sizes = [86.8, 13.2]
     colors_label = ['#10b981', '#ef4444']
     wedges2, texts2, autotexts2 = ax2.pie(
         label_sizes, labels=labels, autopct='%1.1f%%', colors=colors_label,
@@ -183,22 +264,22 @@ def create_graph_stats():
 
 
 def create_feature_breakdown():
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig, axes = plt.subplots(1, 3, figsize=(18, 7))
 
-    # -- Review features (394-d) --
+    # -- Review features (397-d with 7 temporal) --
     rev_feats = [
         'SBERT Text\nEmbedding', 'Rating', 'Review Len',
         'Word Count', 'User Avg', 'Prod Avg',
-        'Rating Dev', 'Temporal\n(4 feats)'
+        'Rating Dev', 'Burst Temporal\n(7 feats)'
     ]
-    rev_dims = [384, 1, 1, 1, 1, 1, 1, 4]
+    rev_dims = [384, 1, 1, 1, 1, 1, 1, 7]
     rev_colors = ['#6366f1'] + ['#8b5cf6'] * 6 + ['#f59e0b']
     bars = axes[0].barh(rev_feats, rev_dims, color=rev_colors, alpha=0.85,
                         edgecolor='black', linewidth=1)
     for bar, d in zip(bars, rev_dims):
         axes[0].text(d + 2, bar.get_y() + bar.get_height() / 2,
                      f'{d}', va='center', fontweight='bold', fontsize=9)
-    axes[0].set_title('Review Features (394-d)', fontsize=12,
+    axes[0].set_title('Review Features (397-d)', fontsize=12,
                       fontweight='bold', pad=12)
     axes[0].set_xlim(0, 420)
     axes[0].grid(axis='x', alpha=0.3)
@@ -237,27 +318,28 @@ def create_feature_breakdown():
 def create_baseline_comparison(metrics):
     fig, ax = plt.subplots(figsize=(10, 5))
 
-    models = ['Old: GraphSAGE\n(TF-IDF, homogeneous)',
-              'New: HeteroConv\n(SBERT, heterogeneous)']
     old_auc, new_auc = 67.9, metrics['test_auc'] * 100
     old_f1, new_f1 = 54.0, metrics['test_f1'] * 100
     old_ff1, new_ff1 = 30.0, metrics['test_fake_f1'] * 100
     old_acc, new_acc = 66.2, metrics['test_accuracy'] * 100
+    old_fr, new_fr = 30.0, metrics.get('test_fake_rec', 0) * 100
 
-    x = np.arange(4)
+    x = np.arange(5)
     width = 0.35
     ax.bar(x - width / 2,
-           [old_acc, old_f1, old_ff1, old_auc],
-           width, label='Old (GraphSAGE)', color='#94a3b8', edgecolor='black')
+           [old_acc, old_f1, old_ff1, old_fr, old_auc],
+           width, label='Old (GraphSAGE, t=0.5)', color='#94a3b8',
+           edgecolor='black')
     ax.bar(x + width / 2,
-           [new_acc, new_f1, new_ff1, new_auc],
-           width, label='New (HeteroGNN)', color='#6366f1', edgecolor='black')
+           [new_acc, new_f1, new_ff1, new_fr, new_auc],
+           width, label=f'New (HeteroGNN, t={metrics.get("best_threshold", 0.35)})',
+           color='#6366f1', edgecolor='black')
 
     ax.set_xticks(x)
-    ax.set_xticklabels(['Accuracy', 'Macro-F1', 'Fake-F1', 'AUC-ROC'],
-                       fontsize=10)
+    ax.set_xticklabels(['Accuracy', 'Macro-F1', 'Fake-F1',
+                        'Fake-Recall', 'AUC-ROC'], fontsize=10)
     ax.set_ylabel('Score (%)', fontsize=11, fontweight='bold')
-    ax.set_title('Baseline vs Upgraded Model', fontsize=14,
+    ax.set_title('Baseline vs Improved Model', fontsize=14,
                  fontweight='bold', pad=15)
     ax.legend(fontsize=10)
     ax.set_ylim(0, 100)
@@ -281,6 +363,9 @@ def main():
     if metrics:
         create_performance_chart(metrics)
         create_confusion_matrix_viz(metrics)
+        create_pr_curve(metrics)
+        create_roc_curve(metrics)
+        create_threshold_plot(metrics)
         create_baseline_comparison(metrics)
     else:
         print("Skipping metric-dependent charts (metrics not found)")

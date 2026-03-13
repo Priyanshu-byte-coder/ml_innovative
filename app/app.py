@@ -24,10 +24,11 @@ group_maps = None
 sbert = None
 device = torch.device('cpu')
 BASE = os.path.join(os.path.dirname(__file__), '..')
+FAKE_THRESHOLD = 0.35  # default; overridden from metrics.json if available
 
 
 def load_model():
-    global model, data, transformers, meta, group_maps, sbert
+    global model, data, transformers, meta, group_maps, sbert, FAKE_THRESHOLD
 
     with open(os.path.join(BASE, 'processed', 'transformers.pkl'), 'rb') as f:
         transformers = pickle.load(f)
@@ -55,10 +56,12 @@ def load_model():
     try:
         with open(os.path.join(BASE, 'checkpoints', 'metrics.json')) as f:
             app.config['metrics'] = json.load(f)
+            if 'best_threshold' in app.config['metrics']:
+                FAKE_THRESHOLD = app.config['metrics']['best_threshold']
     except Exception:
         app.config['metrics'] = {}
 
-    print("Model loaded successfully.")
+    print(f"Model loaded. Fake threshold = {FAKE_THRESHOLD}")
 
 
 def featurize_review(text, rating):
@@ -73,8 +76,11 @@ def featurize_review(text, rating):
     prod_avg     = 3.0 / 5.0         # neutral default
     rating_dev   = (rating - 3.0) / 5.0
 
-    # Temporal defaults for a new review
-    temporal = [0.0, 0.0, 0.0, 0.0]
+    # Temporal defaults for a new review (7 burst features)
+    # reviews_last_1h_user, reviews_last_6h_user, reviews_last_24h_user,
+    # reviews_in_last_week_for_user, time_since_last_user_review,
+    # reviews_last_24h_product, reviews_in_last_week_for_product
+    temporal = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     scalar = np.array([[rating_norm, review_len, word_count,
                          user_avg, prod_avg, rating_dev]])
@@ -160,8 +166,8 @@ def predict():
         with torch.no_grad():
             out   = model(x_dict, ei_dict)
             probs = torch.softmax(out[new_idx], dim=0)
-            pred  = probs.argmax().item()
             fake_p = probs[1].item()
+            pred  = 1 if fake_p >= FAKE_THRESHOLD else 0
 
         # Gather neighbor info for visualisation
         vis_nodes = []
