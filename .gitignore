@@ -1,5 +1,7 @@
 /Yelp-Dataset
 /processed/*.pt
+/processed/*.pkl
+/processed/*.csv
 /checkpoints/*.pt
 __pycache__/
 *.pyc
