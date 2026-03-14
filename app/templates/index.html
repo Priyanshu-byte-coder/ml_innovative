@@ -50,27 +50,40 @@
   <section>
     <div class="card">
       <h2 class="text-lg font-semibold mb-4 text-slate-200">Submit a Review</h2>
+      
+      <!-- Test Cases -->
+      <div class="mb-4 p-3 bg-slate-800 rounded-lg border border-slate-600">
+        <p class="text-xs text-slate-400 mb-2 font-semibold">Quick Test Cases:</p>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" onclick="loadTestCase(1)" class="text-xs bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded transition">Real Review</button>
+          <button type="button" onclick="loadTestCase(2)" class="text-xs bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded transition">Fake Review</button>
+          <button type="button" onclick="loadTestCase(3)" class="text-xs bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded transition">Detailed Real</button>
+          <button type="button" onclick="loadTestCase(4)" class="text-xs bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded transition">Suspicious Fake</button>
+          <button type="button" onclick="loadTestCase(5)" class="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-3 py-1 rounded transition">Borderline</button>
+        </div>
+      </div>
+      
       <form id="review-form" class="space-y-4">
         <div>
           <label class="block text-sm text-slate-400 mb-1">Review Text</label>
-          <textarea name="review_text" rows="5" required
+          <textarea id="review-text-input" name="review_text" rows="5" required
             class="w-full bg-slate-800 border border-slate-600 rounded-lg p-3 text-sm text-slate-200 resize-none"
             placeholder="Paste or type a review here..."></textarea>
         </div>
         <div class="grid grid-cols-3 gap-4">
           <div>
             <label class="block text-sm text-slate-400 mb-1">Rating: <span id="rating-val" class="text-indigo-300 font-bold">3</span></label>
-            <input type="range" name="rating" min="1" max="5" step="1" value="3"
+            <input id="rating-input" type="range" name="rating" min="1" max="5" step="1" value="3"
               class="w-full" oninput="document.getElementById('rating-val').textContent=this.value" />
           </div>
           <div>
             <label class="block text-sm text-slate-400 mb-1">User ID <span class="text-slate-600">(opt)</span></label>
-            <input type="text" name="user_id"
+            <input id="user-id-input" type="text" name="user_id"
               class="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm text-slate-200" placeholder="e.g. 5044"/>
           </div>
           <div>
             <label class="block text-sm text-slate-400 mb-1">Product ID <span class="text-slate-600">(opt)</span></label>
-            <input type="text" name="product_id"
+            <input id="product-id-input" type="text" name="product_id"
               class="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm text-slate-200" placeholder="e.g. 12"/>
           </div>
         </div>
@@ -105,7 +118,14 @@
   <!-- RIGHT: Graph Visualization -->
   <section>
     <div class="card">
-      <h2 class="text-lg font-semibold mb-2 text-slate-200">Interaction Graph</h2>
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-lg font-semibold text-slate-200">Interaction Graph</h2>
+        <button id="view-full-graph-btn" 
+          class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded-lg transition"
+          onclick="loadFullGraph()">
+          View Full Graph
+        </button>
+      </div>
       <p class="text-xs text-slate-500 mb-3">The submitted review (purple) and its neighbours in the user-product graph. <span class="text-green-400">Green = Real</span>, <span class="text-red-400">Red = Fake</span>.</p>
       <div id="graph-container"></div>
     </div>
@@ -125,6 +145,54 @@
 const form = document.getElementById('review-form');
 let probChart = null;
 let neighborChart = null;
+
+// Test case data
+const testCases = {
+  1: {
+    text: "This restaurant has amazing food and excellent service! The pasta was perfectly cooked and the atmosphere was wonderful. Our waiter was very attentive and made great recommendations. We had a fantastic dining experience and will definitely be back. Highly recommend the tiramisu for dessert!",
+    rating: 5,
+    user_id: "",
+    product_id: ""
+  },
+  2: {
+    text: "Best place ever! Amazing! Great! Wonderful! Fantastic! Excellent! Perfect! Outstanding! Superb! Magnificent!",
+    rating: 5,
+    user_id: "",
+    product_id: ""
+  },
+  3: {
+    text: "I've been coming to this coffee shop for over two years now, and it's become my go-to spot for morning coffee. The baristas know my order, the beans are always fresh, and the seating area is comfortable for working. Prices are reasonable for the quality. Only minor complaint is that it can get crowded on weekends, but that's understandable given how good it is.",
+    rating: 4,
+    user_id: "",
+    product_id: ""
+  },
+  4: {
+    text: "This is the best product I have ever purchased in my entire life! Everyone should buy this immediately! Five stars! Perfect! Amazing quality! Best seller! Top rated! Highly recommended! You won't regret it!",
+    rating: 5,
+    user_id: "",
+    product_id: ""
+  },
+  5: {
+    text: "The food was okay. Service was decent. Nothing special but not terrible either. Might come back if I'm in the area.",
+    rating: 3,
+    user_id: "",
+    product_id: ""
+  }
+};
+
+function loadTestCase(caseNum) {
+  const testCase = testCases[caseNum];
+  if (!testCase) return;
+  
+  document.getElementById('review-text-input').value = testCase.text;
+  document.getElementById('rating-input').value = testCase.rating;
+  document.getElementById('rating-val').textContent = testCase.rating;
+  document.getElementById('user-id-input').value = testCase.user_id;
+  document.getElementById('product-id-input').value = testCase.product_id;
+  
+  // Scroll to form
+  document.getElementById('review-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -247,6 +315,83 @@ function renderNeighborChart(neighbors) {
   });
   document.getElementById('neighbor-summary').textContent =
     `${neighbors.length} graph neighbours shown: ${realN} real, ${fakeN} fake.`;
+}
+
+async function loadFullGraph() {
+  const btn = document.getElementById('view-full-graph-btn');
+  btn.textContent = 'Loading...';
+  btn.disabled = true;
+  
+  try {
+    const res = await fetch('/full_graph');
+    const data = await res.json();
+    if (data.error) { alert('Error: ' + data.error); return; }
+    
+    // Prepare nodes with colors
+    const nodes = data.nodes.map(n => {
+      let color = {};
+      if (n.group === 'fake') {
+        color = {background: '#ef444488', border: '#ef4444'};
+      } else if (n.group === 'real') {
+        color = {background: '#22c55e88', border: '#22c55e'};
+      } else if (n.group === 'user') {
+        color = {background: '#3b82f688', border: '#3b82f6'};
+      } else if (n.group === 'product') {
+        color = {background: '#f59e0b88', border: '#f59e0b'};
+      }
+      
+      return {
+        id: n.id,
+        label: n.label,
+        title: n.title,
+        color: color,
+        font: {color: '#e2e8f0', size: 8},
+        size: n.type === 'review' ? 10 : (n.type === 'user' ? 15 : 12),
+        shape: 'dot'
+      };
+    });
+    
+    const edges = data.edges.map(e => ({
+      from: e.from,
+      to: e.to,
+      arrows: e.arrows || '',
+      dashes: e.dashes || false,
+      color: {color: '#47515966', highlight: '#8b5cf6'},
+      width: 0.5
+    }));
+    
+    const container = document.getElementById('graph-container');
+    container.style.height = '600px';
+    
+    new vis.Network(container, 
+      {nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges)}, 
+      {
+        physics: {
+          solver: 'forceAtlas2Based',
+          forceAtlas2Based: {
+            gravitationalConstant: -50,
+            centralGravity: 0.01,
+            springLength: 100,
+            springConstant: 0.08
+          },
+          stabilization: {iterations: 150}
+        },
+        interaction: {hover: true, zoomView: true, dragView: true},
+        nodes: {
+          borderWidth: 1,
+          borderWidthSelected: 2
+        }
+      }
+    );
+    
+    alert(`Full graph loaded!\n\nStats:\n- Reviews: ${data.stats.sampled_reviews} of ${data.stats.total_reviews}\n- Users: ${data.stats.sampled_users} of ${data.stats.total_users}\n- Products: ${data.stats.sampled_products} of ${data.stats.total_products}\n\nColors:\n🔴 Red = Fake reviews\n🟢 Green = Real reviews\n🔵 Blue = Users\n🟠 Orange = Products`);
+    
+  } catch(err) {
+    alert('Failed to load full graph: ' + err);
+  } finally {
+    btn.textContent = 'View Full Graph';
+    btn.disabled = false;
+  }
 }
 </script>
 </body>

@@ -222,6 +222,108 @@ def model_info():
     })
 
 
+@app.route('/full_graph')
+def full_graph():
+    """Return full graph data for visualization (sampled for performance)"""
+    try:
+        max_nodes = 5000  # Limit for browser performance
+        
+        # Sample review nodes
+        n_reviews = data['review'].x.shape[0]
+        if n_reviews > max_nodes:
+            sample_idx = np.random.choice(n_reviews, max_nodes, replace=False)
+        else:
+            sample_idx = np.arange(n_reviews)
+        
+        nodes = []
+        edges = []
+        
+        # Add review nodes
+        for idx in sample_idx:
+            label = int(data['review'].y[idx].item())
+            nodes.append({
+                'id': f'r{idx}',
+                'label': f'R{idx}',
+                'group': 'fake' if label == 1 else 'real',
+                'title': f'Review {idx} - {"Fake" if label == 1 else "Real"}',
+                'type': 'review'
+            })
+        
+        # Add user nodes (sample)
+        n_users = min(500, data['user'].x.shape[0])
+        user_sample = np.random.choice(data['user'].x.shape[0], n_users, replace=False)
+        for idx in user_sample:
+            nodes.append({
+                'id': f'u{idx}',
+                'label': f'U{idx}',
+                'group': 'user',
+                'title': f'User {idx}',
+                'type': 'user'
+            })
+        
+        # Add product nodes (sample)
+        n_products = min(200, data['product'].x.shape[0])
+        product_sample = np.random.choice(data['product'].x.shape[0], n_products, replace=False)
+        for idx in product_sample:
+            nodes.append({
+                'id': f'p{idx}',
+                'label': f'P{idx}',
+                'group': 'product',
+                'title': f'Product {idx}',
+                'type': 'product'
+            })
+        
+        # Add edges (sample from each type)
+        sampled_reviews = set(sample_idx)
+        sampled_users = set(user_sample)
+        sampled_products = set(product_sample)
+        
+        # writes edges (user -> review)
+        if ('user', 'writes', 'review') in data.edge_types:
+            ei = data[('user', 'writes', 'review')].edge_index
+            for i in range(min(5000, ei.shape[1])):
+                u_idx = int(ei[0, i].item())
+                r_idx = int(ei[1, i].item())
+                if u_idx in sampled_users and r_idx in sampled_reviews:
+                    edges.append({'from': f'u{u_idx}', 'to': f'r{r_idx}', 'arrows': 'to'})
+        
+        # about edges (review -> product)
+        if ('review', 'about', 'product') in data.edge_types:
+            ei = data[('review', 'about', 'product')].edge_index
+            for i in range(min(5000, ei.shape[1])):
+                r_idx = int(ei[0, i].item())
+                p_idx = int(ei[1, i].item())
+                if r_idx in sampled_reviews and p_idx in sampled_products:
+                    edges.append({'from': f'r{r_idx}', 'to': f'p{p_idx}', 'arrows': 'to'})
+        
+        # similar_text edges (review -> review)
+        if ('review', 'similar_text', 'review') in data.edge_types:
+            ei = data[('review', 'similar_text', 'review')].edge_index
+            for i in range(min(2000, ei.shape[1])):
+                r1_idx = int(ei[0, i].item())
+                r2_idx = int(ei[1, i].item())
+                if r1_idx in sampled_reviews and r2_idx in sampled_reviews:
+                    edges.append({'from': f'r{r1_idx}', 'to': f'r{r2_idx}', 'dashes': True})
+        
+        return jsonify({
+            'nodes': nodes,
+            'edges': edges,
+            'stats': {
+                'total_reviews': int(n_reviews),
+                'total_users': int(data['user'].x.shape[0]),
+                'total_products': int(data['product'].x.shape[0]),
+                'sampled_reviews': len(sample_idx),
+                'sampled_users': n_users,
+                'sampled_products': n_products,
+            }
+        })
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     load_model()
     app.run(debug=False, port=5000)

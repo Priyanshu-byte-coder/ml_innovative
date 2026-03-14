@@ -1,1 +1,6 @@
 /Yelp-Dataset
+/processed/*.pt
+/checkpoints/*.pt
+__pycache__/
+*.pyc
+.DS_Store
